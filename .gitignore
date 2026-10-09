@@ -1,0 +1,5 @@
+# Releases-only repo. Source is not published here.
+# Only README.md is tracked. Everything else stays local.
+*
+!README.md
+!.gitignore
