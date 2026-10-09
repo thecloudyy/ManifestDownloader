@@ -1,5 +1,11 @@
-# Releases-only repo. Source is not published here.
-# Only README.md is tracked. Everything else stays local.
-*
-!README.md
-!.gitignore
+# Build output and local artifacts — binaries ship as GitHub release assets.
+bin/
+obj/
+dist/
+
+# IDE / local tooling
+.vs/
+.idea/
+*.user
+*.suo
+.freebuff/
