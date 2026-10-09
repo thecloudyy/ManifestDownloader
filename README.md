@@ -9,12 +9,12 @@ Element (WPF + WPF-UI, dark theme, Mica).
 
 Grab the latest release from [GitHub Releases](https://github.com/thecloudyy/ManifestDownloader/releases/latest):
 
-- `ManifestDownloader-Setup-v1.0.0-win-x64.exe` — per-user setup installer, no admin rights (requires .NET 8 Desktop Runtime)
+- `ManifestDownloader-Setup-win-x64.exe` — per-user setup installer, no admin rights (requires .NET 8 Desktop Runtime)
 - `ManifestDownloader.exe` — portable single-file build (requires .NET 8 Desktop Runtime)
 
-Already running an older copy? The in-app **Reinstall** button downloads the
-latest release from GitHub, replaces the running exe, and restarts — no manual
-re-download needed.
+There are no version checks anywhere: the in-app **Reinstall** button always
+downloads the latest release from GitHub, replaces the running exe, and
+restarts — no manual re-download needed.
 
 ## What it does
 
@@ -33,17 +33,17 @@ re-download needed.
    or combine them. Up to **4 depots download in parallel**, each with its own
    progress bar and live speed.
 5. Writes to a `.part` sidecar and renames on success, so a crash or cancel can
-   never leave a half-written file that later looks "up to date". Skips files
-   already present and up-to-date.
+   never leave a half-written file behind. No up-to-date checks — every run
+   downloads the latest manifest fresh.
 6. Remembers source toggles, last AppID, **window size**, and the API key
    (DPAPI-encrypted) between runs. Env vars still override on startup.
-7. **Reinstall button** pulls the live release from GitHub, swaps the running
-   exe (portable or installed), and restarts the app.
+7. **Reinstall button** always pulls the latest release from GitHub, swaps the
+   running exe (portable or installed), and restarts the app.
 
 ## UI
 
 - Card-based layout: library panel on the left, source/actions/progress,
-  queue, and log on the right, with a status bar (Steam path, source, version).
+  queue, and log on the right, with a status bar (Steam path, source).
 - Dark theme throughout (fixed — no toggle).
 - Queue table shows game name, depot, manifest, a per-row progress bar, and a
   color-coded status (queued / downloading / ok / failed / unavailable).
@@ -83,11 +83,11 @@ Requires .NET 8 SDK. Produces a single framework-dependent exe (needs the
 
 ```powershell
 dotnet publish ManifestDownloader.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 installer.iss
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 ```
 
 Outputs: `dist\ManifestDownloader.exe` (portable) and
-`dist\ManifestDownloader-Setup-v1.0.0-win-x64.exe` (installer).
+`dist\ManifestDownloader-Setup-win-x64.exe` (installer).
 
 ## Run
 
