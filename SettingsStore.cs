@@ -45,7 +45,11 @@ internal static class SettingsStore
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!);
-            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(settings));
+            // Write via a temp file first: a crash mid-write must never corrupt
+            // settings.json (which would silently wipe the remembered API key).
+            string tmp = SettingsPath + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(settings));
+            File.Move(tmp, SettingsPath, overwrite: true);
         }
         catch { }
     }

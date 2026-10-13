@@ -178,7 +178,7 @@ internal static class LibraryService
                 $"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{appId}/{h}.jpg");
             return await DownloadFirstValidAsync(urls, path, ct);
         }
-        catch (OperationCanceledException) { throw; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { return null; }
     }
 
@@ -193,15 +193,15 @@ internal static class LibraryService
                 using var res = await Http.GetAsync(url, ct).ConfigureAwait(false);
                 if (!res.IsSuccessStatusCode) continue;
                 byte[] bytes = await res.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-                if (!IsJpegBytes(bytes)) continue;
+                if (!IsImageBytes(bytes)) continue;
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 string tmp = path + ".tmp";
                 await File.WriteAllBytesAsync(tmp, bytes, ct).ConfigureAwait(false);
                 File.Move(tmp, path, overwrite: true);
                 return path;
             }
-            catch (OperationCanceledException) { throw; }
-            catch { }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { } // timeout/HTTP failure — fall through to the next URL
         }
         return null;
     }
@@ -222,7 +222,8 @@ internal static class LibraryService
         catch { return false; }
     }
 
-    private static bool IsJpegBytes(byte[] b) => b.Length >= 512 && IsJpeg(b);
+    // Both JPEG and PNG art exist on the CDN (logo.png), so accept either magic.
+    private static bool IsImageBytes(byte[] b) => b.Length >= 512 && (IsJpeg(b) || IsPng(b));
 
     private static bool IsJpeg(byte[] b) =>
         b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF;

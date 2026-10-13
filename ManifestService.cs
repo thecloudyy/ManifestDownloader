@@ -105,7 +105,8 @@ internal static class ManifestService
             doc.Dispose();
             return null;
         }
-        catch { return null; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } // user pressed Cancel
+        catch { return null; } // HTTP error or the 30s lookup timeout
     }
 
     internal static string? GetManifestId(JsonDocument appInfo, string appId, string depotId)
@@ -163,6 +164,12 @@ internal static class ManifestService
             }
             string user = root.TryGetProperty("username", out var n) ? n.GetString() ?? "user" : "user";
             return (true, $"Welcome back {user}!");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // The 15s linked timeout fired — a real failure, not the user pressing
+            // Cancel (an OCE from ct must still propagate to the run's cancel path).
+            return (false, "Key check timed out — check your connection and try again.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -291,7 +298,7 @@ internal static class ManifestService
                 return null;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception) // network errors AND HttpClient timeouts — both retryable
             {
                 if (attempt < 2)
                 {
@@ -388,8 +395,19 @@ internal static class ManifestService
                     long lastReport = 0;      // throttle progress callbacks (~8/s) instead of per-chunk
                     var clock = System.Diagnostics.Stopwatch.StartNew();
                     fileProgress?.Report((0, total));
-                    while ((read = await net.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    // ResponseHeadersRead means HttpClient.Timeout no longer covers body
+                    // reads — a dead connection would hang forever. Enforce a 60s
+                    // inter-chunk idle limit ourselves, reset on every chunk received.
+                    using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    while (true)
                     {
+                        idle.CancelAfter(TimeSpan.FromSeconds(60));
+                        try { read = await net.ReadAsync(buffer, idle.Token).ConfigureAwait(false); }
+                        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                        {
+                            throw new TimeoutException("Download stalled: no data for 60 seconds.");
+                        }
+                        if (read <= 0) break;
                         await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
                         done += read;
                         if (clock.ElapsedMilliseconds - lastReport >= 120)
@@ -407,7 +425,9 @@ internal static class ManifestService
                 }
                 lastError = "Empty file received";
             }
-            catch (OperationCanceledException) { TryDelete(tempFile); throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { TryDelete(tempFile); throw; }
+            catch (TimeoutException ex) { lastError = ex.Message; }                      // our 60s stall guard
+            catch (TaskCanceledException) { lastError = "Timed out (no response)."; }    // HttpClient.Timeout
             catch (Exception ex) { lastError = ex.Message; }
 
             if (attempt < maxRetries)

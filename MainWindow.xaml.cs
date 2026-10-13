@@ -514,17 +514,21 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (tokens.Length == 0) return;
         bool github = false, dex = false;
         string api = "none";
+        bool recognized = false;
         foreach (string raw in tokens)
         {
             switch (raw.Trim().ToLowerInvariant())
             {
-                case "github": github = true; break;
-                case "manifestdex": case "manifest-dex": case "manifest_dex": dex = true; break;
-                case "morrenus": api = "morrenus"; break;
-                case "manifesthub": api = "manifesthub"; break;
-                case "none": api = "none"; break;
+                case "github": github = true; recognized = true; break;
+                case "manifestdex": case "manifest-dex": case "manifest_dex": case "dex": dex = true; recognized = true; break;
+                case "morrenus": api = "morrenus"; recognized = true; break;
+                case "manifesthub": api = "manifesthub"; recognized = true; break;
+                case "none": api = "none"; recognized = true; break;
             }
         }
+        // An unrecognized spec (e.g. MANIFEST_MODE=fnord) must not silently
+        // disable every source — keep the current selection instead.
+        if (!recognized) return;
         TglGithub.IsChecked = github;
         TglDeX.IsChecked = dex;
         ApplyApiRadio(api);
@@ -554,6 +558,11 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void BtnReinstall_Click(object sender, RoutedEventArgs e)
     {
+        if (!BtnDownload.IsEnabled)
+        {
+            Log("Reinstall: wait for the current download to finish first.", WarnBrush);
+            return;
+        }
         var answer = MessageBox.Show(
             "Download the latest release from GitHub and replace this copy of ManifestDownloader?\n\n" +
             "The app will close, be replaced, then restart.",
@@ -655,6 +664,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
         var started = DateTime.Now;
+
+        // Cancel/error must not leave rows frozen at "queued"/"downloading…".
+        void MarkPendingRows(string status, Brush brush)
+        {
+            foreach (QueueRow row in QueueView.Items)
+                if (row.Status is "queued" or "downloading…")
+                    row.UpdateStatus(status, brush);
+        }
 
         try
         {
@@ -814,12 +831,14 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         catch (OperationCanceledException)
         {
+            MarkPendingRows("cancelled", WarnBrush);
             Log("Cancelled.", WarnBrush);
             LblStatus.Text = "Cancelled.";
             LblSummary.Text = "cancelled";
         }
         catch (Exception ex)
         {
+            MarkPendingRows("error", FailBrush);
             Log($"Error: {ex.Message}", FailBrush);
             LblStatus.Text = "Error — see the log.";
             ResultBar.Severity = Wpf.Ui.Controls.InfoBarSeverity.Error;
@@ -913,6 +932,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TxtKeyPass.IsEnabled = !running && NeedsApiKey;
         if (BtnGetKey is not null)
             BtnGetKey.IsEnabled = !running && (NeedsApiKey || TglDeX.IsChecked == true);
+        // Swapping the exe mid-download would kill the run: reinstall only while idle.
+        BtnReinstall.IsEnabled = !running;
         if (!_loadingLib) BtnRefreshLib.IsEnabled = !running;
         if (running) LibBusy(true); else LibBusy(false);
     }
