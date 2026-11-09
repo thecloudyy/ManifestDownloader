@@ -33,8 +33,11 @@ restarts — no manual re-download needed.
    or combine them. Up to **4 depots download in parallel**, each with its own
    progress bar and live speed.
 5. Writes to a `.part` sidecar and renames on success, so a crash or cancel can
-   never leave a half-written file behind. No up-to-date checks — every run
-   downloads the latest manifest fresh.
+   never leave a half-written file behind. **Skips depots that are already
+   present**: if `<depot>_<manifest>.manifest` exists in `depotcache` or
+   `config\depotcache`, that depot is not downloaded again, so re-runs (and
+   multi-game runs) only fetch what is missing. Existing files are left
+   untouched; queued rows show it as `exists — skipped`.
 6. Remembers source toggles, last AppID, **window size**, and the API key
    (DPAPI-encrypted) between runs. Env vars still override on startup.
 7. **Reinstall button** always pulls the latest release from GitHub, swaps the
@@ -46,7 +49,8 @@ restarts — no manual re-download needed.
   queue, and log on the right, with a status bar (Steam path, source).
 - Dark theme throughout (fixed — no toggle).
 - Queue table shows game name, depot, manifest, a per-row progress bar, and a
-  color-coded status (queued / downloading / ok / failed / unavailable).
+  color-coded status (queued / downloading / ok / exists — skipped / failed /
+  unavailable).
 - Progress card with overall bar, percent, aggregate status line
   (`n/m done · k active — depot … @ speed`), elapsed timer, and summary;
   a result InfoBar reports success/failure counts.

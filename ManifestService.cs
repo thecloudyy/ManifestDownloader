@@ -74,6 +74,34 @@ internal static class ManifestService
         catch { return path.Trim().Replace('/', '\\'); }
     }
 
+    // ── depotcache: Steam reads manifests from both of these folders ──
+
+    /// <summary>Downloads always go to "depotcache"; Steam also reads
+    /// "config\depotcache", so an existing manifest in either one counts.</summary>
+    internal static IReadOnlyList<string> DepotCacheDirs(string steamDir) =>
+    [
+        Path.Combine(steamDir, "depotcache"),
+        Path.Combine(steamDir, "config", "depotcache"),
+    ];
+
+    /// <summary>Path of this depot's manifest when it is already in one of the
+    /// depotcache folders (empty files do not count), otherwise null.</summary>
+    internal static string? FindExistingManifest(string steamDir, string depotId, string manifestId)
+    {
+        string fileName = $"{depotId}_{manifestId}.manifest";
+        foreach (string dir in DepotCacheDirs(steamDir))
+        {
+            try
+            {
+                string path = Path.Combine(dir, fileName);
+                if (File.Exists(path) && new FileInfo(path).Length > 0)
+                    return path;
+            }
+            catch { }
+        }
+        return null;
+    }
+
     // ── Lua parsing: addappid(depotid, digit, "hexkey"), comments ignored by the pattern ──
 
     private static readonly Regex AddAppIdRx = new(

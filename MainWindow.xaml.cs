@@ -698,22 +698,27 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
             var all = new List<(string App, string Name, DepotJob Job)>();
             var noManifest = new List<(string App, string Name, string Depot)>();
+            var existing = new List<(string App, string Name, DepotJob Job)>();
             foreach (string appId in appIds)
             {
                 ct.ThrowIfCancellationRequested();
                 if (!resolutions.TryGetValue(appId, out var r) || r.Error is not null) continue;
                 noManifest.AddRange(r.Missing.Select(d => (r.AppId, r.Name, d)));
-                all.AddRange(r.Jobs.Select(j => (r.AppId, r.Name, j)));
+                foreach (var job in r.Jobs)
+                {
+                    // Skip depots Steam already has: the exact manifest file is in
+                    // either depotcache folder (steam\depotcache or config\depotcache).
+                    if (ManifestService.FindExistingManifest(steamDir, job.DepotId, job.ManifestId) is not null)
+                        existing.Add((r.AppId, r.Name, job));
+                    else
+                        all.Add((r.AppId, r.Name, job));
+                }
             }
-            if (all.Count == 0)
+            if (existing.Count > 0)
             {
-                Log("Nothing to download.", WarnBrush);
-                LblStatus.Text = "Nothing to download.";
-                ResultBar.Severity = Wpf.Ui.Controls.InfoBarSeverity.Warning;
-                ResultBar.Title = "Nothing to download";
-                ResultBar.Message = "No public manifests matched the depots of the selected game(s).";
-                ResultBar.IsOpen = true;
-                return;
+                Log($"{existing.Count} depot(s) already in depotcache, skipped.", OkBrush);
+                foreach (var (app, _, job) in existing)
+                    Log($"    {(multi ? $"[{app}] " : "")}Depot {job.DepotId}: {job.DepotId}_{job.ManifestId}.manifest already present");
             }
 
             string depotCache = Path.Combine(steamDir, "depotcache");
@@ -721,15 +726,46 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
             var rows = all.Select(t => new QueueRow(t.App, t.Name, t.Job.DepotId, t.Job.ManifestId)).ToList();
             foreach (var row in rows) QueueView.Items.Add(row);
+            foreach (var (app, name, job) in existing)
+            {
+                var row = new QueueRow(app, name, job.DepotId, job.ManifestId);
+                row.SetProgress(100);
+                row.UpdateStatus("exists — skipped", MutedBrush);
+                QueueView.Items.Add(row);
+            }
             foreach (var (app, name, depot) in noManifest)
             {
                 var row = new QueueRow(app, name, depot, "-");
                 row.UpdateStatus("unavailable", WarnBrush);
                 QueueView.Items.Add(row);
             }
-            LblQueueCount.Text = noManifest.Count > 0
-                ? $"{all.Count} depot(s) queued • {noManifest.Count} unavailable"
-                : $"{all.Count} depot(s) queued";
+            var countParts = new List<string> { $"{all.Count} depot(s) queued" };
+            if (existing.Count > 0) countParts.Add($"{existing.Count} already present");
+            if (noManifest.Count > 0) countParts.Add($"{noManifest.Count} unavailable");
+            LblQueueCount.Text = string.Join(" • ", countParts);
+
+            if (all.Count == 0)
+            {
+                if (existing.Count > 0)
+                {
+                    Log($"Nothing to download — all {existing.Count} depot(s) are already present.", OkBrush);
+                    LblStatus.Text = $"All {existing.Count} depot(s) already present.";
+                    LblSummary.Text = $"{existing.Count} skipped";
+                    ResultBar.Severity = Wpf.Ui.Controls.InfoBarSeverity.Success;
+                    ResultBar.Title = "Nothing to download";
+                    ResultBar.Message = $"Every depot already has its manifest in Steam's depotcache ({existing.Count} skipped).";
+                }
+                else
+                {
+                    Log("Nothing to download.", WarnBrush);
+                    LblStatus.Text = "Nothing to download.";
+                    ResultBar.Severity = Wpf.Ui.Controls.InfoBarSeverity.Warning;
+                    ResultBar.Title = "Nothing to download";
+                    ResultBar.Message = "No public manifests matched the depots of the selected game(s).";
+                }
+                ResultBar.IsOpen = true;
+                return;
+            }
 
             int doneCount = 0, okCount = 0, activeCount = 0;
             long totalBytes = 0;
@@ -812,19 +848,24 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             var elapsed = DateTime.Now - started;
             int okc = Volatile.Read(ref okCount);
             int failc = failed.Count;
+            int skipc = existing.Count;
             long bytesDone = Interlocked.Read(ref totalBytes);
-            string summary = $"Done: {okc} ok, {failc} failed " +
+            string skipText = skipc > 0 ? $", {skipc} skipped" : "";
+            string summary = $"Done: {okc} ok{skipText}, {failc} failed " +
                              $"({FormatSize(bytesDone)}, {elapsed:mm\\:ss}). → {depotCache}";
-            LblSummary.Text = $"{okc} ok / {failc} fail";
+            LblSummary.Text = skipc > 0
+                ? $"{okc} ok / {skipc} skipped / {failc} fail"
+                : $"{okc} ok / {failc} fail";
             LblStatus.Text = failc > 0
                 ? $"{failc} depot(s) failed — see the log for details."
+                : skipc > 0 ? $"All depots downloaded ({skipc} already present)."
                 : "All depots downloaded.";
             Log(summary, failc > 0 ? FailBrush : OkBrush);
             ResultBar.Severity = failc > 0
                 ? Wpf.Ui.Controls.InfoBarSeverity.Error
                 : Wpf.Ui.Controls.InfoBarSeverity.Success;
             ResultBar.Title = failc > 0 ? "Completed with failures" : "Download complete";
-            ResultBar.Message = $"{okc} ok, {failc} failed. {FormatSize(bytesDone)} in {elapsed:mm\\:ss}.";
+            ResultBar.Message = $"{okc} ok{skipText}, {failc} failed. {FormatSize(bytesDone)} in {elapsed:mm\\:ss}.";
             ResultBar.IsOpen = true;
             foreach (var (app, depot, err) in failed)
                 Log($"    {(multi ? $"[{app}] " : "")}Depot {depot}: {err}", FailBrush);
