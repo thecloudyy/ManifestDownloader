@@ -102,11 +102,11 @@ Outputs: `dist\ManifestDownloader.exe` (portable) and
 ```
 
 Optional env vars (same names as the script): `MANIFEST_MODE` accepts a source
-list separated by `+` or `,` — legacy presets (`github`, `github+morrenus`,
-`github+manifesthub`, `github+manifestdex`) and new combinations like
-`manifestdex` (ManifestDeX-only), `github,manifestdex` or
-`github+manifestdex+morrenus`; `MORRENUS_API_KEY`, `MH_API_KEY`, `APP_ID` —
-prefill the matching fields on startup.
+list separated by `+` or `,` — presets (`github`, `github+hubcap`,
+`github+manifesthub`, `github+manifestdex`, legacy `github+morrenus`) and
+combinations like `manifestdex` (ManifestDeX-only), `github,manifestdex` or
+`github+manifestdex+hubcap`; `HUBCAP_API_KEY` (legacy `MORRENUS_API_KEY`),
+`MH_API_KEY`, `APP_ID` — prefill the matching fields on startup.
 
 ## Download sources
 
@@ -117,8 +117,8 @@ between runs:
 | --- | --- | --- | --- |
 | GitHub mirror | `GitHub mirror` | no | plain `<depot>_<manifest>.manifest` files |
 | ManifestDeX | `ManifestDeX (keyless)` | no | [code API](https://manifest.manifestdex.com/) → Steam CDN (`depot/{d}/manifest/{m}/5/{code}`, zip container) |
-| Morrenus | Fallback API: `Morrenus` | `smm_…` key | hubcapmanifest.com API |
-| ManifestHub | Fallback API: `ManifestHub` | API key | ManifestHub API |
+| Hubcap | Fallback API: `Hubcap` | `smm_…` key | [hubcapmanifest.com](https://hubcapmanifest.com) API (formerly Morrenus) |
+| ManifestHub | Fallback API: `ManifestHub` | API key | [manifesthub2.filegear-sg.me](https://manifesthub2.filegear-sg.me) API |
 
 Attempt order is always GitHub → ManifestDeX → fallback API (disabled sources
 are skipped; with GitHub off you get ManifestDeX-only). ManifestDeX requests

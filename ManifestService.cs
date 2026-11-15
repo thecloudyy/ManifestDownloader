@@ -10,7 +10,7 @@ namespace ManifestDownloader;
 internal enum ManifestMode
 {
     GitHub,           // no fallback API
-    GitHubMorrenus,
+    GitHubHubcap,
     GitHubManifestHub,
 }
 
@@ -18,7 +18,7 @@ internal enum ManifestMode
 /// GitHub mirror → ManifestDeX → fallback API, skipping disabled sources.</summary>
 internal sealed record DownloadSources(ManifestMode ApiMode, bool Github, bool ManifestDeX)
 {
-    internal bool NeedsKey => ApiMode is ManifestMode.GitHubMorrenus or ManifestMode.GitHubManifestHub;
+    internal bool NeedsKey => ApiMode is ManifestMode.GitHubHubcap or ManifestMode.GitHubManifestHub;
     internal bool AnyEnabled => Github || ManifestDeX || NeedsKey;
 }
 
@@ -28,7 +28,7 @@ internal sealed record ManifestResult(
     bool Success, long Size, int Attempts, string? Error, string? FilePath);
 
 /// <summary>Port of the Steam Manifest Downloader script: lua parsing, app-info
-/// lookup, and manifest fetching (GitHub mirror first, Morrenus/ManifestHub fallback).</summary>
+/// lookup, and manifest fetching (GitHub mirror first, Hubcap/ManifestHub fallback).</summary>
 internal static class ManifestService
 {
     internal static readonly HttpClient Http = new();
@@ -154,12 +154,12 @@ internal static class ManifestService
         return null;
     }
 
-    // ── Morrenus key validation ──
+    // ── Hubcap key validation ──
 
-    internal static bool IsValidMorrenusFormat(string key) =>
+    internal static bool IsValidHubcapFormat(string key) =>
         Regex.IsMatch(key, @"^smm_[0-9a-f]{96}$");
 
-    internal static async Task<(bool Ok, string Message)> ValidateMorrenusKeyAsync(string key, CancellationToken ct)
+    internal static async Task<(bool Ok, string Message)> ValidateHubcapKeyAsync(string key, CancellationToken ct)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
@@ -238,12 +238,12 @@ internal static class ManifestService
             lastError = deX.Error ?? lastError;
         }
 
-        // 3. Morrenus / ManifestHub API (optional, needs a key).
+        // 3. Hubcap / ManifestHub API (optional, needs a key).
         if (sources.NeedsKey && !string.IsNullOrWhiteSpace(apiKey))
         {
-            string secondaryUrl = sources.ApiMode == ManifestMode.GitHubMorrenus
+            string secondaryUrl = sources.ApiMode == ManifestMode.GitHubHubcap
                 ? $"https://hubcapmanifest.com/api/v1/generate/manifest?depot_id={job.DepotId}&manifest_id={job.ManifestId}&api_key={Uri.EscapeDataString(apiKey)}"
-                : $"https://api.manifesthub1.filegear-sg.me/manifest?apikey={Uri.EscapeDataString(apiKey)}&depotid={job.DepotId}&manifestid={job.ManifestId}";
+                : $"https://api.manifesthub2.filegear-sg.me/manifest?apikey={Uri.EscapeDataString(apiKey)}&depotid={job.DepotId}&manifestid={job.ManifestId}";
             var secondary = await TryDownloadUrlAsync(secondaryUrl, outputFile, maxRetries: 5, fileProgress, ct, retryDelaySeconds).ConfigureAwait(false);
             attempts += secondary.Attempts;
             if (secondary.Success)

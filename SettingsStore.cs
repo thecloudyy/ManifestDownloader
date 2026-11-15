@@ -14,7 +14,7 @@ internal sealed class AppSettings
     // legacy Mode string (which older versions used for everything).
     public bool? UseGithub { get; set; }
     public bool? UseManifestDeX { get; set; }
-    /// <summary>"none" | "morrenus" | "manifesthub".</summary>
+    /// <summary>"none" | "morrenus" (Hubcap's stored token) | "manifesthub".</summary>
     public string? ApiSource { get; set; }
     public string? ProtectedKey { get; set; }
     public bool RememberKey { get; set; } = true;

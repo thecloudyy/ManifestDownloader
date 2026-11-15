@@ -120,7 +120,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     private ManifestMode Mode =>
-        RbMorrenus.IsChecked == true ? ManifestMode.GitHubMorrenus :
+        RbHubcap.IsChecked == true ? ManifestMode.GitHubHubcap :
         RbManifestHub.IsChecked == true ? ManifestMode.GitHubManifestHub : ManifestMode.GitHub;
 
     /// <summary>The currently enabled sources, in attempt order:
@@ -130,9 +130,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TglGithub.IsChecked == true,
         TglDeX.IsChecked == true);
 
-    /// <summary>Only the Morrenus/ManifestHub fallbacks need an API key —
+    /// <summary>Only the Hubcap/ManifestHub fallbacks need an API key —
     /// the GitHub mirror and the ManifestDeX code API are keyless.</summary>
-    private bool NeedsApiKey => Mode is ManifestMode.GitHubMorrenus or ManifestMode.GitHubManifestHub;
+    private bool NeedsApiKey => Mode is ManifestMode.GitHubHubcap or ManifestMode.GitHubManifestHub;
 
     private string ApiKey => TxtKeyPass.Password.Trim();
 
@@ -142,8 +142,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private static string KeyUrlFor(ManifestMode mode, bool manifestDeX) => mode switch
     {
-        ManifestMode.GitHubMorrenus => "https://hubcapmanifest.com/api-keys/user",
-        ManifestMode.GitHubManifestHub => "https://manifesthub1.filegear-sg.me/",
+        ManifestMode.GitHubHubcap => "https://hubcapmanifest.com/api-keys/user",
+        ManifestMode.GitHubManifestHub => "https://manifesthub2.filegear-sg.me/",
         _ => manifestDeX ? ManifestService.ManifestDeXDocsUrl
                          : "https://github.com/qwe213312/k25FCdfEOoEJ42S6",
     };
@@ -230,7 +230,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             ApplyApiRadio(api);
         else if (_settings.UseGithub is null)
             ApplySourceTokens(_settings.Mode); // legacy file: derive toggles from Mode
-        else if (_settings.Mode == "github+morrenus") RbMorrenus.IsChecked = true;
+        else if (_settings.Mode == "github+morrenus") RbHubcap.IsChecked = true;
         else if (_settings.Mode == "github+manifesthub") RbManifestHub.IsChecked = true;
         if (_settings.RememberKey && SettingsStore.Unprotect(_settings.ProtectedKey) is { } savedKey)
             TxtKeyPass.Password = savedKey;
@@ -251,7 +251,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _settings.UseManifestDeX = TglDeX.IsChecked == true;
         _settings.ApiSource = Mode switch
         {
-            ManifestMode.GitHubMorrenus => "morrenus",
+            ManifestMode.GitHubHubcap => "morrenus",
             ManifestMode.GitHubManifestHub => "manifesthub",
             _ => "none",
         };
@@ -507,7 +507,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var names = new List<string>();
         if (TglGithub.IsChecked == true) names.Add("GitHub");
         if (TglDeX.IsChecked == true) names.Add("ManifestDeX");
-        if (Mode == ManifestMode.GitHubMorrenus) names.Add("Morrenus");
+        if (Mode == ManifestMode.GitHubHubcap) names.Add("Hubcap");
         else if (Mode == ManifestMode.GitHubManifestHub) names.Add("ManifestHub");
         return names;
     }
@@ -529,7 +529,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 case "github": github = true; recognized = true; break;
                 case "manifestdex": case "manifest-dex": case "manifest_dex": case "dex": dex = true; recognized = true; break;
-                case "morrenus": api = "morrenus"; recognized = true; break;
+                case "hubcap": case "morrenus": api = "morrenus"; recognized = true; break;
                 case "manifesthub": api = "manifesthub"; recognized = true; break;
                 case "none": api = "none"; recognized = true; break;
             }
@@ -544,7 +544,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ApplyApiRadio(string api)
     {
-        if (api == "morrenus") RbMorrenus.IsChecked = true;
+        if (api is "morrenus" or "hubcap") RbHubcap.IsChecked = true;
         else if (api == "manifesthub") RbManifestHub.IsChecked = true;
         else RbApiNone.IsChecked = true;
     }
@@ -555,7 +555,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         string? mode = Environment.GetEnvironmentVariable("MANIFEST_MODE");
         if (!string.IsNullOrWhiteSpace(mode)) ApplySourceTokens(mode);
-        string? key = Environment.GetEnvironmentVariable("MORRENUS_API_KEY")
+        string? key = Environment.GetEnvironmentVariable("HUBCAP_API_KEY")
+            ?? Environment.GetEnvironmentVariable("MORRENUS_API_KEY")
             ?? Environment.GetEnvironmentVariable("MH_API_KEY");
         if (!string.IsNullOrWhiteSpace(key)) TxtKeyPass.Password = key.Trim();
         string? app = Environment.GetEnvironmentVariable("APP_ID");
@@ -652,9 +653,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             Log("This mode needs an API key.", FailBrush);
             return;
         }
-        if (Mode == ManifestMode.GitHubMorrenus && !ManifestService.IsValidMorrenusFormat(apiKey))
+        if (Mode == ManifestMode.GitHubHubcap && !ManifestService.IsValidHubcapFormat(apiKey))
         {
-            Log("Invalid Morrenus key format: expected smm_ + 96 hex chars.", FailBrush);
+            Log("Invalid Hubcap key format: expected smm_ + 96 hex chars.", FailBrush);
             return;
         }
         PersistSettings();
@@ -688,10 +689,10 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             if (steamDir is null) { Log("Could not find Steam installation.", FailBrush); LblStatus.Text = "Steam not found."; return; }
             Log($"Steam: {steamDir}", OkBrush);
 
-            if (Mode == ManifestMode.GitHubMorrenus)
+            if (Mode == ManifestMode.GitHubHubcap)
             {
-                Log("Validating Morrenus key...");
-                var (ok, msg) = await ManifestService.ValidateMorrenusKeyAsync(apiKey, ct);
+                Log("Validating Hubcap key...");
+                var (ok, msg) = await ManifestService.ValidateHubcapKeyAsync(apiKey, ct);
                 Log(msg, ok ? OkBrush : FailBrush);
                 if (!ok) { LblStatus.Text = "API key rejected."; return; }
             }
@@ -978,7 +979,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         BtnDownload.IsEnabled = !running;
         BtnCancel.IsEnabled = running;
         RbApiNone.IsEnabled = !running;
-        RbMorrenus.IsEnabled = !running;
+        RbHubcap.IsEnabled = !running;
         RbManifestHub.IsEnabled = !running;
         TglGithub.IsEnabled = !running;
         TglDeX.IsEnabled = !running;
