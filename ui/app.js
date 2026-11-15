@@ -191,9 +191,13 @@ function updateOverall() {
     $('bar-fill').style.width = '0%';
     return;
   }
-  // Depots with no public manifest never download, so they must not hold the
-  // overall bar below 100%.
-  const counted = rows.filter((row) => row.statusCell.textContent !== 'unavailable');
+  // The bar tracks the depots that actually download: skipped and unavailable
+  // rows are already accounted for in the queue counter, and counting them here
+  // made the bar jump to full while the run was still resolving.
+  const counted = rows.filter((row) => {
+    const status = row.statusCell.textContent;
+    return status !== 'unavailable' && status !== 'exists - skipped' && status !== 'cancelled';
+  });
   const total = counted.reduce((sum, row) => {
     const width = parseFloat(row.fill.style.width) || 0;
     return sum + width / 100;
@@ -299,6 +303,7 @@ async function init() {
   wireEvents();
 
   await listen('row', (event) => applyRow(event.payload));
+  await listen('status', (event) => setStatus(event.payload));
   await listen('log', (event) => addLog(event.payload.level, event.payload.text));
   await listen('summary', (event) => {
     const s = event.payload;

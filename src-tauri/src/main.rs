@@ -159,6 +159,10 @@ fn emit_row(app: &AppHandle, job: &Job, status: &str, progress: f64) {
     );
 }
 
+fn emit_status(app: &AppHandle, text: impl Into<String>) {
+    let _ = app.emit("status", text.into());
+}
+
 fn emit_row_parts(app: &AppHandle, id: u64, app_id: &str, depot: &str, manifest: &str, status: &str, progress: f64) {
     let _ = app.emit(
         "row",
@@ -773,6 +777,7 @@ async fn run_download(
     }
 
     emit_log(&app, "info", format!("Steam: {}", steam.display()));
+    emit_status(&app, "Resolving depots...");
     if force {
         emit_log(
             &app,
@@ -825,6 +830,7 @@ async fn run_download(
 
         let app_name = read_lua(&lua_path).0.unwrap_or_else(|| format!("App {app_id}"));
 
+        emit_status(&app, format!("{tag}Fetching app info..."));
         emit_log(&app, "info", format!("{tag}Fetching app info..."));
         let info = match fetch_app_info(&client, app_id).await {
             Ok(value) => value,
@@ -915,6 +921,8 @@ async fn run_download(
         "info",
         format!("Downloading {} depot(s) to {}", queued.len(), depot_cache.display()),
     );
+    let queue_total = queued.len();
+    emit_status(&app, format!("Downloading {queue_total} depot(s)..."));
 
     let semaphore = Arc::new(Semaphore::new(WORKERS));
     let ok_count = Arc::new(AtomicU32::new(0));
@@ -947,6 +955,8 @@ async fn run_download(
                     ok_count.fetch_add(1, Ordering::Relaxed);
                     byte_count.fetch_add(size, Ordering::Relaxed);
                     emit_row(&app, &job, &format!("ok ({})", fmt_size(size)), 1.0);
+                    let done = ok_count.load(Ordering::Relaxed) + fail_count.load(Ordering::Relaxed);
+                    emit_status(&app, format!("Downloading {done}/{queue_total} depot(s)..."));
                 }
                 Err(error) => {
                     if cancel.load(Ordering::Relaxed) {
@@ -954,6 +964,8 @@ async fn run_download(
                     } else {
                         fail_count.fetch_add(1, Ordering::Relaxed);
                         emit_row(&app, &job, "failed", 0.0);
+                        let done = ok_count.load(Ordering::Relaxed) + fail_count.load(Ordering::Relaxed);
+                        emit_status(&app, format!("Downloading {done}/{queue_total} depot(s)..."));
                         emit_log(
                             &app,
                             "err",
