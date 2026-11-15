@@ -175,18 +175,31 @@ function applyRow(payload) {
   updateOverall();
 }
 
+function isTerminal(status) {
+  return (
+    status === 'failed' ||
+    status === 'unavailable' ||
+    status === 'cancelled' ||
+    status === 'exists - skipped' ||
+    status.startsWith('ok')
+  );
+}
+
 function updateOverall() {
   const rows = [...state.rows.values()];
   if (!rows.length) {
     $('bar-fill').style.width = '0%';
     return;
   }
-  const total = rows.reduce((sum, row) => {
+  // Depots with no public manifest never download, so they must not hold the
+  // overall bar below 100%.
+  const counted = rows.filter((row) => row.statusCell.textContent !== 'unavailable');
+  const total = counted.reduce((sum, row) => {
     const width = parseFloat(row.fill.style.width) || 0;
     return sum + width / 100;
   }, 0);
-  $('bar-fill').style.width = `${Math.round((total / rows.length) * 100)}%`;
-  const done = rows.filter((r) => r.statusCell.textContent.startsWith('ok') || r.statusCell.textContent === 'failed').length;
+  $('bar-fill').style.width = counted.length ? `${Math.round((total / counted.length) * 100)}%` : '0%';
+  const done = rows.filter((r) => isTerminal(r.statusCell.textContent)).length;
   $('queue-count').textContent = `${done}/${rows.length} finished`;
 }
 
@@ -290,7 +303,15 @@ async function init() {
   await listen('summary', (event) => {
     const s = event.payload;
     $('summary').textContent = `${s.ok} ok, ${s.skipped} skipped, ${s.failed} failed, ${s.seconds}s`;
-    setStatus(s.cancelled ? 'Cancelled.' : s.failed > 0 ? 'Finished with failures.' : 'Finished.');
+    setStatus(
+      s.cancelled
+        ? 'Cancelled.'
+        : s.failed > 0
+          ? 'Finished with failures.'
+          : s.ok === 0 && s.skipped > 0
+            ? `Nothing to download - ${s.skipped} depot(s) already present.`
+            : 'Finished.',
+    );
     setRunning(false);
   });
   await listen('finished', () => setRunning(false));
