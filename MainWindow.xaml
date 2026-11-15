@@ -354,9 +354,14 @@
                                        Click="BtnGetKey_Click" />
                         </Grid>
 
-                        <CheckBox x:Name="ChkRememberKey" Content="Remember key on this PC (DPAPI-encrypted)"
-                                  IsChecked="True" Margin="0,8,0,0"
-                                  Checked="RememberKey_Changed" Unchecked="RememberKey_Changed" />
+                        <WrapPanel Margin="0,8,0,0">
+                            <CheckBox x:Name="ChkRememberKey" Content="Remember key on this PC (DPAPI-encrypted)"
+                                      IsChecked="True" Margin="0,0,24,0"
+                                      Checked="RememberKey_Changed" Unchecked="RememberKey_Changed" />
+                            <CheckBox x:Name="ChkForce" Content="Force re-download"
+                                      ToolTip="Download every depot even when its manifest is already in depotcache (existing files are replaced)"
+                                      Checked="Force_Changed" Unchecked="Force_Changed" />
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
 

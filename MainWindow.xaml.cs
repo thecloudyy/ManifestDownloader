@@ -235,6 +235,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (_settings.RememberKey && SettingsStore.Unprotect(_settings.ProtectedKey) is { } savedKey)
             TxtKeyPass.Password = savedKey;
         ChkRememberKey.IsChecked = _settings.RememberKey;
+        ChkForce.IsChecked = _settings.ForceRedownload == true;
         if (!string.IsNullOrWhiteSpace(_settings.LastAppId))
             TxtAppId.Text = _settings.LastAppId;
         }
@@ -261,6 +262,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         if (_settings.ApiSource != "none") parts.Add(_settings.ApiSource!);
         _settings.Mode = parts.Count > 0 ? string.Join("+", parts) : "none";
         _settings.RememberKey = ChkRememberKey.IsChecked == true;
+        _settings.ForceRedownload = ChkForce.IsChecked == true;
         _settings.ProtectedKey = _settings.RememberKey ? SettingsStore.Protect(ApiKey) : null;
         if (Regex.IsMatch(TxtAppId.Text.Trim(), @"^\d+$"))
             _settings.LastAppId = TxtAppId.Text.Trim();
@@ -285,6 +287,12 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             Log("Saved API key cleared.");
         }
         else PersistSettings();
+    }
+
+    private void Force_Changed(object sender, RoutedEventArgs e)
+    {
+        if (TxtAppId is null || _loadingSettings) return; // still initializing
+        PersistSettings();
     }
 
     private void UpdateSteamStatus()
@@ -689,6 +697,9 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
 
             bool multi = appIds.Count > 1;
+            bool force = ChkForce.IsChecked == true;
+            if (force)
+                Log("Force re-download: depots already in depotcache will be downloaded again.", WarnBrush);
             var names = _libraryAll.ToDictionary(g => g.AppId, g => g.Name, StringComparer.Ordinal);
 
             // Resolve every app's depots concurrently — one SteamCMD round-trip each.
@@ -708,7 +719,8 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 {
                     // Skip depots Steam already has: the exact manifest file is in
                     // either depotcache folder (steam\depotcache or config\depotcache).
-                    if (ManifestService.FindExistingManifest(steamDir, job.DepotId, job.ManifestId) is not null)
+                    // "Force re-download" bypasses this and fetches them again.
+                    if (!force && ManifestService.FindExistingManifest(steamDir, job.DepotId, job.ManifestId) is not null)
                         existing.Add((r.AppId, r.Name, job));
                     else
                         all.Add((r.AppId, r.Name, job));
@@ -741,6 +753,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
             var countParts = new List<string> { $"{all.Count} depot(s) queued" };
             if (existing.Count > 0) countParts.Add($"{existing.Count} already present");
+            if (force) countParts.Add("force re-download");
             if (noManifest.Count > 0) countParts.Add($"{noManifest.Count} unavailable");
             LblQueueCount.Text = string.Join(" • ", countParts);
 
@@ -970,6 +983,7 @@ public partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         TglGithub.IsEnabled = !running;
         TglDeX.IsEnabled = !running;
         ChkRememberKey.IsEnabled = !running;
+        ChkForce.IsEnabled = !running;
         TxtKeyPass.IsEnabled = !running && NeedsApiKey;
         if (BtnGetKey is not null)
             BtnGetKey.IsEnabled = !running && (NeedsApiKey || TglDeX.IsChecked == true);

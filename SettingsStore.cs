@@ -18,6 +18,8 @@ internal sealed class AppSettings
     public string? ApiSource { get; set; }
     public string? ProtectedKey { get; set; }
     public bool RememberKey { get; set; } = true;
+    /// <summary>Force re-download: ignore manifests already in depotcache.</summary>
+    public bool? ForceRedownload { get; set; }
     public string? LastAppId { get; set; }
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }

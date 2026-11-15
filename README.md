@@ -37,7 +37,9 @@ restarts — no manual re-download needed.
    present**: if `<depot>_<manifest>.manifest` exists in `depotcache` or
    `config\depotcache`, that depot is not downloaded again, so re-runs (and
    multi-game runs) only fetch what is missing. Existing files are left
-   untouched; queued rows show it as `exists — skipped`.
+   untouched; queued rows show it as `exists — skipped`. Tick **Force
+   re-download** to bypass that check and fetch every selected depot again
+   (overwrites the existing files; the checkbox is remembered between runs).
 6. Remembers source toggles, last AppID, **window size**, and the API key
    (DPAPI-encrypted) between runs. Env vars still override on startup.
 7. **Reinstall button** always pulls the latest release from GitHub, swaps the
