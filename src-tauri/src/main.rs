@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 
@@ -26,6 +26,7 @@ static DEX_GATE: Mutex<Option<Instant>> = Mutex::new(None);
 struct AppState {
     client: reqwest::Client,
     cancel: Mutex<Option<Arc<AtomicBool>>>,
+    running: AtomicBool,
 }
 
 #[derive(Clone, Serialize)]
@@ -347,22 +348,44 @@ async fn fetch_app_info(
     client: &reqwest::Client,
     app_id: &str,
 ) -> Result<serde_json::Value, String> {
-    let request = client
-        .get(format!("https://api.steamcmd.net/v1/info/{app_id}"))
-        .send();
-    let res = tokio::time::timeout(Duration::from_secs(30), request)
-        .await
-        .map_err(|_| "SteamCMD API timed out".to_string())?
-        .map_err(|e| e.to_string())?;
-    if !res.status().is_success() {
-        return Err(format!("SteamCMD API {}", res.status()));
+    let mut last = String::from("SteamCMD API failed");
+    for attempt in 0..3 {
+        let request = client
+            .get(format!("https://api.steamcmd.net/v1/info/{app_id}"))
+            .send();
+        match tokio::time::timeout(Duration::from_secs(30), request).await {
+            Err(_) => last = "SteamCMD API timed out".to_string(),
+            Ok(Err(e)) => last = format!("SteamCMD API: {e}"),
+            Ok(Ok(res)) => {
+                let status = res.status();
+                if !status.is_success() {
+                    last = format!("SteamCMD API {status}");
+                } else {
+                    match res.text().await {
+                        Ok(body) => match serde_json::from_str::<serde_json::Value>(&body) {
+                            Ok(value) => {
+                                let ok = value
+                                    .get("status")
+                                    .and_then(|s| s.as_str())
+                                    .map(|s| s.eq_ignore_ascii_case("success"))
+                                    .unwrap_or(false);
+                                if ok {
+                                    return Ok(value);
+                                }
+                                last = "SteamCMD API returned no data".to_string();
+                            }
+                            Err(e) => last = format!("SteamCMD API response: {e}"),
+                        },
+                        Err(e) => last = format!("SteamCMD API: {e}"),
+                    }
+                }
+            }
+        }
+        if attempt < 2 {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
     }
-    let body = res.text().await.map_err(|e| e.to_string())?;
-    let value: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-    match value.get("status").and_then(|s| s.as_str()) {
-        Some(s) if s.eq_ignore_ascii_case("success") => Ok(value),
-        _ => Err("SteamCMD API failed".to_string()),
-    }
+    Err(last)
 }
 
 fn public_manifest(info: &serde_json::Value, app_id: &str, depot: &str) -> Option<String> {
@@ -976,11 +999,11 @@ fn steam_dir() -> Option<String> {
 }
 
 #[tauri::command]
-fn library(steam_dir: String) -> Vec<Game> {
+async fn library(state: State<'_, AppState>, steam_dir: String) -> Result<Vec<Game>, String> {
     let dir = Path::new(&steam_dir).join("config").join("stplug-in");
-    let mut games = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
+    let mut entries: Vec<(String, Option<String>, usize)> = Vec::new();
+    if let Ok(read) = std::fs::read_dir(dir) {
+        for entry in read.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("lua") {
                 continue;
@@ -990,15 +1013,63 @@ fn library(steam_dir: String) -> Vec<Game> {
                 _ => continue,
             };
             let (name, depots) = read_lua(&path);
-            games.push(Game {
-                app_id: app_id.clone(),
-                name: name.unwrap_or_else(|| format!("App {app_id}")),
-                depots,
-            });
+            entries.push((app_id, name, depots));
         }
     }
+
+    // Lua headers often lack a name; the SteamCMD app info has one.
+    let missing: Vec<String> = entries
+        .iter()
+        .filter(|(_, name, _)| name.is_none())
+        .map(|(id, _, _)| id.clone())
+        .collect();
+    let mut names: HashMap<String, String> = HashMap::new();
+    if !missing.is_empty() {
+        let semaphore = Arc::new(Semaphore::new(6));
+        let mut handles = Vec::new();
+        for app_id in missing {
+            let client = state.client.clone();
+            let semaphore = semaphore.clone();
+            handles.push(tauri::async_runtime::spawn(async move {
+                let _permit = semaphore.acquire_owned().await;
+                let name = app_info_name(&client, &app_id).await;
+                (app_id, name)
+            }));
+        }
+        for handle in handles {
+            if let Ok((app_id, Some(name))) = handle.await {
+                names.insert(app_id, name);
+            }
+        }
+    }
+
+    let mut games: Vec<Game> = entries
+        .into_iter()
+        .map(|(app_id, lua_name, depots)| {
+            let name = names
+                .get(&app_id)
+                .cloned()
+                .or(lua_name)
+                .unwrap_or_else(|| format!("App {app_id}"));
+            Game {
+                app_id,
+                name,
+                depots,
+            }
+        })
+        .collect();
     games.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    games
+    Ok(games)
+}
+
+async fn app_info_name(client: &reqwest::Client, app_id: &str) -> Option<String> {
+    let info = fetch_app_info(client, app_id).await.ok()?;
+    info.get("data")?
+        .get(app_id)?
+        .get("common")?
+        .get("name")?
+        .as_str()
+        .map(|s| s.to_string())
 }
 
 #[tauri::command]
@@ -1090,20 +1161,19 @@ async fn start_download(
         return Err("Enter at least one AppID.".to_string());
     }
     let steam = detect_steam().ok_or_else(|| "Could not find Steam.".to_string())?;
-    let cancel = {
-        let mut guard = state.cancel.lock().unwrap();
-        if let Some(current) = guard.as_ref() {
-            if !current.load(Ordering::Relaxed) {
-                return Err("A download is already running.".to_string());
-            }
-        }
-        let flag = Arc::new(AtomicBool::new(false));
-        *guard = Some(flag.clone());
-        flag
-    };
+    if state.running.swap(true, Ordering::SeqCst) {
+        return Err("A download is already running.".to_string());
+    }
+    let cancel = Arc::new(AtomicBool::new(false));
+    *state.cancel.lock().unwrap() = Some(cancel.clone());
     let client = state.client.clone();
+    let reset = app.clone();
     tauri::async_runtime::spawn(async move {
         run_download(app, client, steam, ids, sources, force, cancel).await;
+        // Clear the in-progress flag so the next run is accepted.
+        if let Some(state) = reset.try_state::<AppState>() {
+            state.running.store(false, Ordering::SeqCst);
+        }
     });
     Ok(())
 }
@@ -1126,6 +1196,7 @@ fn main() {
         .manage(AppState {
             client,
             cancel: Mutex::new(None),
+            running: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             steam_dir,
