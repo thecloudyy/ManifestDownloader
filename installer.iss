@@ -1,10 +1,11 @@
 ; ManifestDownloader installer — per-user, no admin rights required.
 ;
-; Built locally (this repo ships no CI, same as Element):
-;   dotnet publish ManifestDownloader.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
-;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+; Built locally (this repo ships no CI):
+;   cargo build --release --manifest-path src-tauri\Cargo.toml
+;   copy src-tauri\target\release\manifest-downloader.exe dist\ManifestDownloader.exe
+;   ISCC.exe installer.iss
 ;
-; Installs the single-file build to %LocalAppData%\Programs\ManifestDownloader.
+; Installs the Tauri build to %LocalAppData%\Programs\ManifestDownloader.
 
 #define MyAppName "ManifestDownloader"
 #define MyAppPublisher "thecloudyy"

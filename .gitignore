@@ -2,6 +2,8 @@
 bin/
 obj/
 dist/
+src-tauri/target/
+build.log
 
 # IDE / local tooling
 .vs/

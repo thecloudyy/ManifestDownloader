@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Steam Manifest Downloader</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <span class="app-name">Steam Manifest Downloader</span>
+    <span id="steam-path" class="muted">Steam: checking</span>
+  </header>
+
+  <main>
+    <section class="pane library">
+      <div class="pane-head">
+        <h2>Library</h2>
+        <div class="head-buttons">
+          <button id="btn-all" type="button">All</button>
+          <button id="btn-none" type="button">None</button>
+          <button id="btn-rescan" type="button">Rescan</button>
+        </div>
+      </div>
+      <input id="search" type="search" placeholder="Search">
+      <div id="games" class="games"></div>
+      <div id="lib-status" class="muted"></div>
+    </section>
+
+    <section class="pane downloader">
+      <fieldset>
+        <legend>Sources</legend>
+        <label class="check"><input type="checkbox" id="src-github" checked> GitHub mirror</label>
+        <label class="check"><input type="checkbox" id="src-dex" checked> ManifestDeX (no key)</label>
+        <div class="row">
+          <span class="label">Fallback API</span>
+          <label class="check"><input type="radio" name="api" value="none" checked> None</label>
+          <label class="check"><input type="radio" name="api" value="hubcap"> Hubcap</label>
+          <label class="check"><input type="radio" name="api" value="manifesthub"> ManifestHub</label>
+        </div>
+        <div class="row">
+          <label class="label" for="apikey">API key</label>
+          <input id="apikey" type="password" placeholder="smm_... for Hubcap" autocomplete="off">
+          <label class="check"><input type="checkbox" id="remember-key" checked> Remember</label>
+        </div>
+        <label class="check"><input type="checkbox" id="force"> Force re-download (overwrite manifests already in depotcache)</label>
+      </fieldset>
+
+      <div class="row actions">
+        <label class="label" for="appid">AppID</label>
+        <input id="appid" type="text" placeholder="e.g. 1361510" inputmode="numeric">
+        <button id="btn-download" type="button" class="primary">Download</button>
+        <button id="btn-cancel" type="button" disabled>Cancel</button>
+        <button id="btn-folder" type="button">Depot folder</button>
+      </div>
+
+      <div class="bar"><div id="bar-fill"></div></div>
+      <div class="row status-row">
+        <span id="status">Idle.</span>
+        <span id="summary" class="muted"></span>
+      </div>
+
+      <h2>Queue <span id="queue-count" class="muted"></span></h2>
+      <div class="table-wrap">
+        <table id="queue">
+          <thead>
+            <tr><th>App</th><th>Depot</th><th>Manifest</th><th>Status</th><th>Progress</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="pane-head log-head">
+        <h2>Log</h2>
+        <div class="head-buttons">
+          <button id="btn-copy" type="button">Copy</button>
+          <button id="btn-clear" type="button">Clear</button>
+        </div>
+      </div>
+      <pre id="log"></pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
