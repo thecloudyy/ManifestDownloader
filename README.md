@@ -29,6 +29,9 @@ Both need the WebView2 runtime (preinstalled on Windows 11 and current Windows 1
    cannot leave a half-written manifest behind.
 6. Remembers source selection, force mode, last AppID and the API key
    (DPAPI-encrypted for the current Windows user) between runs.
+7. On startup it asks GitHub for the latest release and, when a newer version
+   exists, shows an update dialog — **Update now** downloads the new exe, swaps
+   it in and restarts the app. **Check updates** in the header re-runs the check.
 
 ## UI
 

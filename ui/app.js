@@ -217,6 +217,36 @@ async function startDownload() {
   }
 }
 
+async function checkForUpdates(manual) {
+  try {
+    const info = await invoke('check_update');
+    if (!info) {
+      if (manual) addLog('info', 'No updates available.');
+      return;
+    }
+    const version = await invoke('app_version');
+    $('update-text').textContent = `Version ${info.version} is available (you have ${version}).`;
+    $('update-modal').classList.remove('hidden');
+    $('btn-update-now').onclick = () => runUpdate(info.url);
+  } catch (error) {
+    if (manual) addLog('err', `Update check failed: ${error}`);
+  }
+}
+
+async function runUpdate(url) {
+  const button = $('btn-update-now');
+  button.disabled = true;
+  button.textContent = 'Downloading...';
+  addLog('info', 'Downloading update...');
+  try {
+    await invoke('apply_update', { url });
+  } catch (error) {
+    addLog('err', `Update failed: ${error}`);
+    button.disabled = false;
+    button.textContent = 'Update now';
+  }
+}
+
 function wireEvents() {
   $('btn-download').addEventListener('click', startDownload);
   $('btn-cancel').addEventListener('click', () => {
@@ -237,6 +267,8 @@ function wireEvents() {
   });
   $('search').addEventListener('input', renderGames);
   $('btn-clear').addEventListener('click', () => ($('log').textContent = ''));
+  $('btn-check-updates').addEventListener('click', () => checkForUpdates(true));
+  $('btn-update-later').addEventListener('click', () => $('update-modal').classList.add('hidden'));
   $('btn-copy').addEventListener('click', () => navigator.clipboard.writeText($('log').textContent));
   $('appid').addEventListener('keydown', (event) => {
     if (event.key === 'Enter') startDownload();
@@ -277,6 +309,7 @@ async function init() {
   $('steam-path').textContent = state.steam ? `Steam: ${state.steam}` : 'Steam: not found';
   addLog('info', 'Ready.');
   await loadLibrary();
+  await checkForUpdates(false);
 }
 
 init().catch((error) => addLog('err', `Startup failed: ${error}`));

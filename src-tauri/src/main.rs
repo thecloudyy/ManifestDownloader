@@ -1178,6 +1178,126 @@ async fn start_download(
     Ok(())
 }
 
+#[derive(Serialize)]
+struct UpdateInfo {
+    version: String,
+    url: String,
+    page: String,
+}
+
+fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+    let cleaned = text.trim().trim_start_matches(['v', 'V']);
+    let core = cleaned.split(['-', '+']).next().unwrap_or(cleaned);
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next().unwrap_or("0").parse().ok()?;
+    let patch = parts.next().unwrap_or("0").parse().ok()?;
+    Some((major, minor, patch))
+}
+
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+async fn fetch_update(client: &reqwest::Client) -> Option<UpdateInfo> {
+    let request = client
+        .get("https://api.github.com/repos/thecloudyy/ManifestDownloader/releases/latest")
+        .header("Accept", "application/vnd.github+json")
+        .send();
+    let res = tokio::time::timeout(Duration::from_secs(15), request)
+        .await
+        .ok()?
+        .ok()?;
+    if !res.status().is_success() {
+        return None; // offline or rate limited: stay quiet
+    }
+    let value: serde_json::Value = serde_json::from_str(&res.text().await.ok()?).ok()?;
+    let tag = value.get("tag_name").and_then(|v| v.as_str())?;
+    let latest = parse_version(tag)?;
+    let current = parse_version(env!("CARGO_PKG_VERSION"))?;
+    if latest <= current {
+        return None;
+    }
+    let page = value
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("https://github.com/thecloudyy/ManifestDownloader/releases/latest")
+        .to_string();
+    let url = value
+        .get("assets")
+        .and_then(|a| a.as_array())
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|a| {
+                    a.get("name").and_then(|n| n.as_str()) == Some("ManifestDownloader.exe")
+                })
+                .and_then(|a| a.get("browser_download_url"))
+                .and_then(|u| u.as_str())
+        })
+        .unwrap_or("https://github.com/thecloudyy/ManifestDownloader/releases/latest/download/ManifestDownloader.exe")
+        .to_string();
+    Some(UpdateInfo {
+        version: tag.trim_start_matches(['v', 'V']).to_string(),
+        url,
+        page,
+    })
+}
+
+#[tauri::command]
+async fn check_update(state: State<'_, AppState>) -> Result<Option<UpdateInfo>, String> {
+    Ok(fetch_update(&state.client).await)
+}
+
+#[tauri::command]
+async fn apply_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let temp_exe = std::env::temp_dir().join("ManifestDownloader-update.exe");
+    let res = state
+        .client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", res.status()));
+    }
+    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() < 100_000 {
+        return Err("The update download looks incomplete.".to_string());
+    }
+    std::fs::write(&temp_exe, &bytes).map_err(|e| e.to_string())?;
+
+    // The running exe cannot be overwritten, so hand the swap to a detached
+    // script that waits for this process to exit, copies the new build over
+    // the old one and starts it again.
+    let script = std::env::temp_dir().join("manifestdownloader-update.cmd");
+    let body = format!(
+        "@echo off\r\nping 127.0.0.1 -n 3 >nul\r\ncopy /y \"{}\" \"{}\" >nul\r\nstart \"\" \"{}\"\r\ndel \"%~f0\"\r\n",
+        temp_exe.display(),
+        exe.display(),
+        exe.display()
+    );
+    std::fs::write(&script, body).map_err(|e| e.to_string())?;
+
+    let mut command = std::process::Command::new("cmd");
+    command.args(["/C", &script.to_string_lossy()]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    command.spawn().map_err(|e| e.to_string())?;
+
+    app.exit(0);
+    Ok(())
+}
+
 #[tauri::command]
 fn cancel_download(state: State<'_, AppState>) {
     if let Some(flag) = state.cancel.lock().unwrap().as_ref() {
@@ -1205,7 +1325,10 @@ fn main() {
             load_settings,
             save_settings,
             start_download,
-            cancel_download
+            cancel_download,
+            app_version,
+            check_update,
+            apply_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
